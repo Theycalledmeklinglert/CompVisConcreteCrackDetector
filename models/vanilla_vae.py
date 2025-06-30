@@ -49,7 +49,7 @@ class VanillaVAE(BaseVAE):
                 nn.Sequential(
                     nn.ConvTranspose2d(hidden_dims[i],
                                        hidden_dims[i + 1],
-                                       kernel_size=3,
+                                       kernel_size=3,   #todo: was 3
                                        stride = 2,
                                        padding=1,
                                        output_padding=1),
@@ -57,14 +57,12 @@ class VanillaVAE(BaseVAE):
                     nn.LeakyReLU())
             )
 
-
-
         self.decoder = nn.Sequential(*modules)
 
         self.final_layer = nn.Sequential(
                             nn.ConvTranspose2d(hidden_dims[-1],
                                                hidden_dims[-1],
-                                               kernel_size=3,
+                                               kernel_size=3,    #todo: was 3
                                                stride=2,
                                                padding=1,
                                                output_padding=1),
@@ -137,7 +135,7 @@ class VanillaVAE(BaseVAE):
         log_var = args[3]
 
         kld_weight = kwargs['M_N'] # Account for the minibatch samples from the dataset
-        recons_loss =F.mse_loss(recons, input)
+        recons_loss =F.mse_loss(recons, input, reduction='sum')
 
 
         kld_loss = torch.mean(-0.5 * torch.sum(1 + log_var - mu ** 2 - log_var.exp(), dim = 1), dim = 0)
@@ -171,3 +169,8 @@ class VanillaVAE(BaseVAE):
         """
 
         return self.forward(x)[0]
+
+    #TODO:
+    # - Try using only val_dataset for threshold first; then check if results are better when using train+val_dataset
+    # - 3-sigma rule, Simple Mahalanobis dist for threshold or sth else?
+
