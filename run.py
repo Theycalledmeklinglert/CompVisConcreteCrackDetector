@@ -1,24 +1,16 @@
-import os
-import yaml
 import argparse
-import numpy as np
+import os
 from pathlib import Path
 
+import yaml
 from lightning import seed_everything
-
-from models import *
-from experiment import VAEXperiment
-import torch.backends.cudnn as cudnn
-import lightning as PL
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
-#from pytorch_lightning.utilities.seed import seed_everything
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint, EarlyStopping
-#from pytorch_lightning.plugins import DDPPlugin
-from pytorch_lightning.strategies import DDPStrategy
+from pytorch_lightning.loggers import TensorBoardLogger
 
 from dataset import VAEDataset
-
+from experiment import VAEXperiment
+from models import *
 
 def main():
     print(torch.cuda.is_available())

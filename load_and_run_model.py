@@ -1,14 +1,19 @@
 # run.py  ─── add ability to load & test checkpoints
-import os, yaml, argparse, torch, multiprocessing
+import argparse
+import multiprocessing
+import os
+import yaml
 from pathlib import Path
+
 from lightning import seed_everything
 from pytorch_lightning import Trainer
-from pytorch_lightning.loggers import TensorBoardLogger
 from pytorch_lightning.callbacks import LearningRateMonitor, ModelCheckpoint, EarlyStopping
+from pytorch_lightning.loggers import TensorBoardLogger
 
-from models import *                 # vae_models dict
-from experiment import VAEXperiment
 from dataset import VAEDataset
+from experiment import VAEXperiment
+from models import *  # vae_models dict
+
 
 # ─────────────────────────────────────────────────────────
 
@@ -21,7 +26,7 @@ def build_trainer(tb_logger, cfg, callbacks_extra=None) -> Trainer:
             dirpath=os.path.join(tb_logger.log_dir, "checkpoints"),
             monitor="val_loss",
             save_last=True),
-        EarlyStopping(monitor="val_loss", patience=10, mode="min"),
+        EarlyStopping(monitor="val_loss", patience=20, mode="min"),
     ]
     if callbacks_extra:
         cbs.extend(callbacks_extra)
@@ -85,14 +90,17 @@ def main() -> None:
         # Option 2 (manual): just call helper once
         #experiment.sample_images_next_to_origs()
 
-        val_loader = dm.val_dataloader()
-        test_loader = dm.test_dataloader()
-        experiment.classify_cracked_images([val_loader, test_loader],
-                                           result_dir="crack_results",
-                                           k=3.0)
+    #todo: should still work if used immediately after training right?
+    val_loader = dm.val_dataloader()
+    test_loader = dm.test_dataloader()
+    experiment.classify_cracked_images([val_loader, test_loader],
+                                       result_dir="crack_results",
+                                       k=3.0)
 
 # ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
     multiprocessing.freeze_support()   # for Windows dataloader workers
     main()
     #todo: python load_and_run_model.py -c configs/vae.yaml --ckpt .\logs\VanillaVAE\version_13\checkpoints\epoch=96-step=24250.ckpt
+    #
+    # version 13 and 19 are decent.

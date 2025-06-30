@@ -1,15 +1,9 @@
-import os
-import torch
-from torch import Tensor
-from pathlib import Path
-from typing import List, Optional, Sequence, Union, Any, Callable
-from torchvision.datasets.folder import default_loader
+from typing import List, Optional, Sequence, Union
+
+from PIL import Image
 from pytorch_lightning import LightningDataModule
 from torch.utils.data import DataLoader, Dataset, random_split, ConcatDataset
 from torchvision import transforms, datasets
-from torchvision.datasets import CelebA
-from PIL import Image
-import zipfile
 
 
 # Add your custom dataset class here
@@ -23,50 +17,6 @@ class MyDataset(Dataset):
     
     def __getitem__(self, idx):
         pass
-
-
-class MyCelebA(CelebA):
-    """
-    A work-around to address issues with pytorch's celebA dataset class.
-    
-    Download and Extract
-    URL : https://drive.google.com/file/d/1m8-EBPgi5MRubrm6iQjafK2QMHDBMSfJ/view?usp=sharing
-    """
-    
-    def _check_integrity(self) -> bool:
-        return True
-    
-    
-
-class OxfordPets(Dataset):
-    """
-    URL = https://www.robots.ox.ac.uk/~vgg/data/pets/
-    """
-    def __init__(self, 
-                 data_path: str, 
-                 split: str,
-                 transform: Callable,
-                **kwargs):
-        self.data_dir = Path(data_path) / "OxfordPets"        
-        self.transforms = transform
-        imgs = sorted([f for f in self.data_dir.iterdir() if f.suffix == '.jpg'])
-        
-        self.imgs = imgs[:int(len(imgs) * 0.75)] if split == "train" else imgs[int(len(imgs) * 0.75):]
-    
-    def __len__(self):
-        return len(self.imgs)
-    
-    def __getitem__(self, idx):
-        img = default_loader(self.imgs[idx])
-        
-        if self.transforms is not None:
-            img = self.transforms(img)
-        
-        return img, 0.0 # dummy datat to prevent breaking 
-
-
-
-
 
 
 def pil_loader(path):
@@ -146,37 +96,42 @@ class VAEDataset(LightningDataModule):
         #                                     transforms.Resize(self.patch_size),
         #                                     transforms.ToTensor(),])
 
-        full_dataset = datasets.DatasetFolder(
+        # ---------- load all NON-cracked images ----------------------------------
+        full_noncrack = datasets.DatasetFolder(
             self.train_data_dir,
-            loader=pil_loader,  # if needed
-            extensions=('jpg', 'jpeg', 'png'),
+            loader=pil_loader,
+            extensions=("jpg", "jpeg", "png"),
             transform=train_transforms,
         )
 
-        train_size = int(0.8 * len(full_dataset))
-        val_size = len(full_dataset) - train_size
+        # ---------- 65 / 20 / 15 split ------------------------------------------
+        n_total = len(full_noncrack)
+        n_train = int(0.65 * n_total)
+        n_val = int(0.20 * n_total)
+        n_test_nc = n_total - n_train - n_val
 
-        self.train_dataset, self.val_dataset = random_split(
-            full_dataset, [train_size, val_size]
-            # ,generator=torch.Generator().manual_seed(42)  # for reproducibility
+        train_nc, val_nc, test_nc = random_split(
+            full_noncrack,
+            [n_train, n_val, n_test_nc],
+            # generator=torch.Generator().manual_seed(42)
         )
 
-        # Attach "non-crack" = label 0.0
-        self.train_dataset = LabeledWrapper(self.train_dataset, label=0.0)
-        self.val_dataset = LabeledWrapper(self.val_dataset, label=0.0)
+        # ---------- wrap with fixed labels --------------------------------------
+        self.train_dataset = LabeledWrapper(train_nc, label=0.0)  # non-crack
+        self.val_dataset = LabeledWrapper(val_nc, label=0.0)  # non-crack
+        test_normal = LabeledWrapper(test_nc, label=0.0)  # non-crack
 
-        self.test_dataset = datasets.DatasetFolder(
+        # ---------- load cracked images (label = 1) ------------------------------
+        cracked_ds = datasets.DatasetFolder(
             self.test_data_dir,
             loader=pil_loader,
-            extensions=('jpg', 'jpeg', 'png'),
+            extensions=("jpg", "jpeg", "png"),
             transform=train_transforms,
         )
+        cracked_ds = LabeledWrapper(cracked_ds, label=1.0)
 
-        #self.test_dataset = ConcatDataset([self.val_dataset, self.test_dataset])
-        self.test_dataset = ConcatDataset([
-            LabeledWrapper(self.val_dataset, label=0.0),  # also keep val images in test set
-            LabeledWrapper(self.test_dataset, label=1.0)
-        ])
+        # ---------- final test set:  normal  + cracked ---------------------------
+        self.test_dataset = ConcatDataset([test_normal, cracked_ds])
 
 #       ===============================================================
         

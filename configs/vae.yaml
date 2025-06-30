@@ -9,7 +9,7 @@ data_params:
   test_data_path: "../CompVisPortfolio2_Ex1/Concrete/Data/crack"
   train_batch_size: 64
   val_batch_size:  64
-  patch_size: 64
+  patch_size: 64   #todo: was 64 before
   num_workers: 4
 
 
@@ -17,13 +17,13 @@ exp_params:
   LR: 0.005
   weight_decay: 0.0
   scheduler_gamma: 0.95
-  kld_weight: 0.0001   #todo was 0.00025
+  kld_weight: 0.001   #todo was 0.00025 / 0.0001
   manual_seed: 1265
 
 trainer_params:
   accelerator: gpu        # "cpu", "gpu", or "auto"
   devices: [ 0 ]
-  max_epochs: 100
+  max_epochs: 150
 
 logging_params:
   save_dir: "logs/"

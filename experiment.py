@@ -1,25 +1,19 @@
 import os
-import math
 
+import matplotlib.pyplot as plt
 import numpy as np
+import pytorch_lightning as pl
 import torch
-from torch import optim
-from tqdm import tqdm
 import torch.nn.functional as F
-
+import torchvision.utils as vutils
+from sklearn.decomposition import PCA
+from sklearn.manifold import TSNE
+from torch import optim
+from torchvision.utils import save_image
+from tqdm import tqdm
 
 from models import BaseVAE
 from models.types_ import *
-from utils import data_loader
-import pytorch_lightning as pl
-from torchvision import transforms
-import torchvision.utils as vutils
-from torchvision.datasets import CelebA
-from torch.utils.data import DataLoader
-from sklearn.manifold import TSNE
-from sklearn.decomposition import PCA
-import matplotlib.pyplot as plt
-from torchvision.utils import save_image
 
 
 class VAEXperiment(pl.LightningModule):
@@ -31,6 +25,10 @@ class VAEXperiment(pl.LightningModule):
 
         self.model = vae_model
         self.params = params
+
+        self.train_losses: list[float] = []
+        self.val_losses: list[float] = []
+
         self.curr_device = None
         self.hold_graph = False
         try:
@@ -189,10 +187,6 @@ class VAEXperiment(pl.LightningModule):
         plt.tight_layout()
         plt.savefig(f"{title.replace(' ', '_').lower()}.png")
         plt.show()
-
-    import os, numpy as np, torch, torch.nn.functional as F
-    from tqdm import tqdm
-    from torchvision.utils import save_image
 
     # inside class VAEXperiment …
 
