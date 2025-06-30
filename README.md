@@ -1,4 +1,18 @@
 <h1 align="center">
+
+Run "python load_and_run_model.py -c configs/vae.yaml --ckpt .\logs\VanillaVAE\<insert version to load>\checkpoints\<insert checkpoint file to load>"
+
+</h1>
+
+
+
+
+
+
+
+
+
+<h1 align="center">
   <b>PyTorch VAE</b><br>
 </h1>
 
