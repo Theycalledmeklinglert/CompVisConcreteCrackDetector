@@ -95,12 +95,13 @@ def main() -> None:
     test_loader = dm.test_dataloader()
     experiment.classify_cracked_images([val_loader, test_loader],
                                        result_dir="crack_results",
-                                       k=3.0)
+                                       k=2.0)
 
 # ─────────────────────────────────────────────────────────
 if __name__ == "__main__":
     multiprocessing.freeze_support()   # for Windows dataloader workers
     main()
     #todo: python load_and_run_model.py -c configs/vae.yaml --ckpt .\logs\VanillaVAE\version_13\checkpoints\epoch=96-step=24250.ckpt
+    #      python load_and_run_model.py -c configs/vae.yaml --ckpt .\logs\VanillaVAE\version_19\checkpoints\epoch=141-step=28968.ckpt
     #
     # version 13 and 19 are decent.

@@ -173,4 +173,7 @@ class VanillaVAE(BaseVAE):
     #TODO:
     # - Try using only val_dataset for threshold first; then check if results are better when using train+val_dataset
     # - 3-sigma rule, Simple Mahalanobis dist for threshold or sth else?
+    # - implement Precision, Recall and F1 Score
+    # - create relevant statistics necessary for presentation
+    # - variate n-sigma, possibly retrain
 

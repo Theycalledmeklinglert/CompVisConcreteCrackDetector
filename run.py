@@ -23,9 +23,6 @@ def main():
     devName = torch.cuda.get_device_name(devNumber)
     print("Current device name is:", devName)
 
-
-
-
     parser = argparse.ArgumentParser(description='Generic runner for VAE models')
     parser.add_argument('--config',  '-c',
                         dest="filename",

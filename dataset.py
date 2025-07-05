@@ -64,7 +64,7 @@ class VAEDataset(LightningDataModule):
         patch_size: Union[int, Sequence[int]] = (256, 256),
         num_workers: int = 4,
         persistent_workers: bool = True,
-        pin_memory: bool = True,    #todo: was False before; may fk me
+        pin_memory: bool = True,
         **kwargs,
     ):
         super().__init__()
@@ -122,13 +122,31 @@ class VAEDataset(LightningDataModule):
         test_normal = LabeledWrapper(test_nc, label=0.0)  # non-crack
 
         # ---------- load cracked images (label = 1) ------------------------------
-        cracked_ds = datasets.DatasetFolder(
+        full_cracked_ds = datasets.DatasetFolder(
             self.test_data_dir,
             loader=pil_loader,
             extensions=("jpg", "jpeg", "png"),
             transform=train_transforms,
         )
+
+        n_cracked_total = len(full_cracked_ds)
+        c_test_size = int(0.15 * n_cracked_total)
+        c_rest_size = n_cracked_total - c_test_size
+
+        # print("c_test_size", c_test_size)
+        # print("c_rest_size", c_rest_size)
+        # print("n_test_nc", n_test_nc)
+
+        cracked_ds, _ = random_split(
+            full_cracked_ds,
+            [c_test_size, c_rest_size],
+            # generator=torch.Generator().manual_seed(42)
+        )
+
         cracked_ds = LabeledWrapper(cracked_ds, label=1.0)
+
+        # print("cracked_ds length:", len(cracked_ds))
+        # print("nc length:", len(test_normal))
 
         # ---------- final test set:  normal  + cracked ---------------------------
         self.test_dataset = ConcatDataset([test_normal, cracked_ds])
