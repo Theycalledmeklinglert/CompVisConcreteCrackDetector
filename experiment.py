@@ -112,7 +112,37 @@ class VAEXperiment(pl.LightningModule):
         except Warning:
             pass
 
-    def sample_images_next_to_origs(self):
+    # def sample_images_next_to_origs(self):
+    #     # Get sample batch
+    #     test_input, test_label = next(iter(self.trainer.datamodule.test_dataloader()))
+    #     test_input = test_input.to(self.curr_device)
+    #     test_label = test_label.to(self.curr_device)
+    #
+    #     # Generate reconstructions
+    #     recons = self.model.generate(test_input, labels=test_label)
+    #
+    #     # Concatenate original and reconstruction along the batch dimension
+    #     # i.e., [x0, x1, ..., xn, x0', x1', ..., xn']
+    #     comparison = torch.cat([test_input, recons])
+    #
+    #     # Ensure save dir exists
+    #     recon_dir = os.path.join(self.logger.log_dir, "Reconstructions")
+    #     os.makedirs(recon_dir, exist_ok=True)
+    #
+    #     # Save image grid with 2 rows: top = originals, bottom = reconstructions
+    #     vutils.save_image(
+    #         comparison.data,
+    #         os.path.join(
+    #             self.logger.log_dir,
+    #             "Reconstructions",
+    #             f"recons_comp_{self.logger.name}_Epoch_{self.current_epoch}.png"
+    #         ),
+    #         nrow=test_input.size(0),  # so originals and recons appear in pairs
+    #         normalize=True
+    #     )
+
+    def sample_images_next_to_origs(self, num_pairs_per_row=5):
+
         # Get sample batch
         test_input, test_label = next(iter(self.trainer.datamodule.test_dataloader()))
         test_input = test_input.to(self.curr_device)
@@ -121,24 +151,29 @@ class VAEXperiment(pl.LightningModule):
         # Generate reconstructions
         recons = self.model.generate(test_input, labels=test_label)
 
-        # Concatenate original and reconstruction along the batch dimension
-        # i.e., [x0, x1, ..., xn, x0', x1', ..., xn']
-        comparison = torch.cat([test_input, recons])
+        # Limit to a multiple of num_pairs_per_row for clean layout
+        max_pairs = (test_input.size(0) // num_pairs_per_row) * num_pairs_per_row
+        test_input = test_input[:max_pairs]
+        recons = recons[:max_pairs]
 
-        # Ensure save dir exists
+        # Interleave original and reconstruction: [orig1, recon1, orig2, recon2, ...]
+        interleaved = torch.stack([test_input, recons], dim=1).view(-1, *test_input.shape[1:])
+
+        # Save directory
         recon_dir = os.path.join(self.logger.log_dir, "Reconstructions")
         os.makedirs(recon_dir, exist_ok=True)
 
-        # Save image grid with 2 rows: top = originals, bottom = reconstructions
+        # Save image grid with num_pairs_per_row * 2 images per row
+        # (2 images per pair: original and reconstruction)
         vutils.save_image(
-            comparison.data,
+            interleaved.data,
             os.path.join(
-                self.logger.log_dir,
-                "Reconstructions",
-                f"recons_comp_{self.logger.name}_Epoch_{self.current_epoch}.png"
+                recon_dir,
+                f"recons_grid_{self.logger.name}_Epoch_{self.current_epoch}.png"
             ),
-            nrow=test_input.size(0),  # so originals and recons appear in pairs
-            normalize=True
+            nrow=num_pairs_per_row * 2,  # two images per pair
+            normalize=True,
+            pad_value=1.0
         )
 
     def visualize_latent_space(self, dataloader, method="tsne", max_samples=1000, title="Latent Space"):
@@ -185,76 +220,6 @@ class VAEXperiment(pl.LightningModule):
         plt.savefig(f"{title.replace(' ', '_').lower()}.png")
         plt.show()
 
-    # inside class VAEXperiment …
-
-    # def classify_cracked_images(self,
-    #                             dataloaders,  # [val_loader, test_loader]
-    #                             result_dir: str = "./logs/",
-    #                             k: float = 3.0):  # k⋅σ added to μ for threshold
-    #     """
-    #     1. Compute threshold = μ + k·σ of reconstruction error on the *validation* set
-    #     2. Classify each image in the *test* set with that threshold
-    #     3. Save images into `result_dir/{crack|normal}/`
-    #     4. Print overall accuracy and error percentages
-    #     """
-    #     val_loader, test_loader = dataloaders
-    #     model = self.model.eval()  # inference mode
-    #     device = next(model.parameters()).device
-    #     os.makedirs(result_dir, exist_ok=True)
-    #
-    #     # ───────── 1) collect val errors ─────────────────────────────
-    #     val_errors = []
-    #     with torch.no_grad():
-    #         for x, _ in tqdm(val_loader, desc="Validation"):
-    #             x = x.to(device)
-    #             recon = model.generate(x)
-    #             err = F.mse_loss(recon, x, reduction="none")  # per-pixel
-    #             err = err.flatten(1).mean(dim=1)  # per-image
-    #             val_errors.extend(err.cpu().numpy())
-    #
-    #     val_errors = np.array(val_errors)
-    #     mu, sigma = val_errors.mean(), val_errors.std()
-    #     threshold = mu + k * sigma
-    #     print(f"\nThreshold set to: {threshold:.6f}  (μ={mu:.6f}, σ={sigma:.6f}, k={k})")
-    #
-    #     # ───────── 2) classify test images ──────────────────────────
-    #     correct, total = 0, 0
-    #     cracked, uncracked = [], []
-    #
-    #     with torch.no_grad():
-    #         for idx, (x, lbl) in enumerate(tqdm(test_loader, desc="Testing")):
-    #             x = x.to(device)
-    #             recon = model.generate(x)
-    #             err = F.mse_loss(recon, x, reduction="none")
-    #             err = err.flatten(1).mean(dim=1).cpu().numpy()  # shape [batch]
-    #
-    #             for j, e in enumerate(err):
-    #                 true_lbl = lbl[j].item()  # 0 = non-crack, 1 = crack
-    #                 pred_lbl = 1 if e > threshold else 0
-    #                 total += 1
-    #                 if pred_lbl == true_lbl:
-    #                     correct += 1
-    #
-    #                 # save image to folder
-    #                 tag = "crack" if pred_lbl == 1 else "normal"
-    #                 save_dir = os.path.join(result_dir, tag)
-    #                 os.makedirs(save_dir, exist_ok=True)
-    #                 save_image(x[j].cpu(), os.path.join(save_dir, f"{idx:05d}_{j}.png"))
-    #
-    #                 if pred_lbl == 1:
-    #                     cracked.append((idx, e))
-    #                 else:
-    #                     uncracked.append((idx, e))
-    #
-    #     # ───────── 3) report ────────────────────────────────────────
-    #     acc = 100 * correct / total
-    #     print(f"\nTotal images : {total}")
-    #     print(f"Correct      : {correct}  ({acc:.2f} %)")
-    #     print(f"Incorrect    : {total - correct}  ({100 - acc:.2f} %)")
-    #     print(f"Predicted 'crack'   : {len(cracked)}")
-    #     print(f"Predicted 'normal'  : {len(uncracked)}")
-    #
-    #     return cracked, uncracked, threshold
 
     def classify_cracked_images(self,
                                 dataloaders,  # [val_loader, test_loader]

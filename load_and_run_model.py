@@ -85,7 +85,7 @@ def main() -> None:
         # experiment.visualize_latent_space(experiment.trainer.datamodule.test_dataloader(), method="tsne", title="Test Latent Space")
 
         # run one validation epoch --> triggers sample_images_next_to_origs
-        #trainer.validate(experiment, datamodule=dm, verbose=False)
+        trainer.validate(experiment, datamodule=dm, verbose=False)
 
     val_loader = dm.val_dataloader()
     test_loader = dm.test_dataloader()
