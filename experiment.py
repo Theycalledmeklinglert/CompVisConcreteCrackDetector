@@ -370,6 +370,19 @@ class VAEXperiment(pl.LightningModule):
         plt.show()
         plt.close()
 
+        y_scores = np.array(y_scores)
+        y_true = np.array(y_true)
+
+        plt.hist(y_scores[y_true == 1], bins=100, alpha=0.5, label='crack (true 1)')
+        plt.hist(y_scores[y_true == 0], bins=100, alpha=0.5, label='normal (true 0)')
+        plt.xlabel('Reconstruction error')
+        plt.ylabel('Count')
+        plt.legend()
+        plt.title('Distribution of reconstruction errors')
+        plt.savefig(os.path.join(result_dir, "histogram_reconstruction_errors.png"))
+        plt.grid(True)
+        plt.show()
+
         return cracked, uncracked, threshold
 
 

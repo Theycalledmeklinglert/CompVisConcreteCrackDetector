@@ -84,13 +84,9 @@ def main() -> None:
         # experiment.visualize_latent_space(experiment.trainer.datamodule.train_dataloader(), method="tsne", title="Train Latent Space")
         # experiment.visualize_latent_space(experiment.trainer.datamodule.test_dataloader(), method="tsne", title="Test Latent Space")
 
-        # Option 1: run one validation epoch → triggers sample_images_next_to_origs
+        # run one validation epoch --> triggers sample_images_next_to_origs
         #trainer.validate(experiment, datamodule=dm, verbose=False)
 
-        # Option 2 (manual): just call helper once
-        #experiment.sample_images_next_to_origs()
-
-    #todo: should still work if used immediately after training right?
     val_loader = dm.val_dataloader()
     test_loader = dm.test_dataloader()
     experiment.classify_cracked_images([val_loader, test_loader],

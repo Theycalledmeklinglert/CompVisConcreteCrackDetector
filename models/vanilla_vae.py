@@ -176,4 +176,8 @@ class VanillaVAE(BaseVAE):
     # - implement Precision, Recall and F1 Score
     # - create relevant statistics necessary for presentation
     # - variate n-sigma, possibly retrain
+    # - fucking AP and ROC fixen
+    #
+    # - Model seems to struggle with small cracks and images of cracks that are very dark ---> dark images have less contrast between the (usually) bright concrete
+    #   and dark areas in the cracks
 

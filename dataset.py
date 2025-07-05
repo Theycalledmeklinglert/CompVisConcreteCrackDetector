@@ -6,12 +6,10 @@ from torch.utils.data import DataLoader, Dataset, random_split, ConcatDataset
 from torchvision import transforms, datasets
 
 
-# Add your custom dataset class here
 class MyDataset(Dataset):
     def __init__(self):
         pass
-    
-    
+
     def __len__(self):
         pass
     
@@ -21,9 +19,6 @@ class MyDataset(Dataset):
 
 def pil_loader(path):
     return Image.open(path).convert("RGB")            #todo: test this with both RGB and Grayscale(L)
-
-
-
 
 
 class LabeledWrapper(Dataset):
