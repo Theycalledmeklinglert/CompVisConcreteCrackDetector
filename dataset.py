@@ -18,7 +18,7 @@ class MyDataset(Dataset):
 
 
 def pil_loader(path):
-    return Image.open(path).convert("RGB")            #todo: test this with both RGB and Grayscale(L)
+    return Image.open(path).convert("RGB")
 
 
 class LabeledWrapper(Dataset):

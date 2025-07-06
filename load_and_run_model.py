@@ -1,8 +1,8 @@
-# run.py  ─── add ability to load & test checkpoints
 import argparse
 import multiprocessing
 import os
 import yaml
+import random
 from pathlib import Path
 
 from lightning import seed_everything
@@ -12,7 +12,7 @@ from pytorch_lightning.loggers import TensorBoardLogger
 
 from dataset import VAEDataset
 from experiment import VAEXperiment
-from models import *  # vae_models dict
+from models import *
 
 
 # ─────────────────────────────────────────────────────────
@@ -46,7 +46,9 @@ def main() -> None:
     # ── config & reproducibility ─────────────────────────
     with open(args.config, "r") as f:
         cfg = yaml.safe_load(f)
-    seed_everything(cfg["exp_params"]["manual_seed"], workers=True)
+
+    random_seed = random.randint(0, 2 ** 32 - 1)
+    seed_everything(random_seed, workers=True)
 
     # ── datamodule ───────────────────────────────────────
     dm = VAEDataset(**cfg["data_params"],
@@ -80,18 +82,21 @@ def main() -> None:
         trainer = build_trainer(tb_logger, cfg, callbacks_extra=[])
         experiment.trainer = trainer  # manually attach
 
-        # trainer.datamodule = dm
-        # experiment.visualize_latent_space(experiment.trainer.datamodule.train_dataloader(), method="tsne", title="Train Latent Space")
-        # experiment.visualize_latent_space(experiment.trainer.datamodule.test_dataloader(), method="tsne", title="Test Latent Space")
+        trainer.datamodule = dm
+        experiment.visualize_latent_space(experiment.trainer.datamodule.train_dataloader(), method="tsne", title="Train Latent Space")
+        experiment.visualize_latent_space(experiment.trainer.datamodule.test_dataloader(), method="tsne", title="Test Latent Space")
 
         # run one validation epoch --> triggers sample_images_next_to_origs
-        trainer.validate(experiment, datamodule=dm, verbose=False)
+        #trainer.validate(experiment, datamodule=dm, verbose=False)
 
     val_loader = dm.val_dataloader()
     test_loader = dm.test_dataloader()
-    experiment.classify_cracked_images([val_loader, test_loader],
-                                       result_dir="crack_results",
-                                       k=2.0)
+    experiment.classify_cracked_images_with_k_sigma_rule([val_loader, test_loader],
+                                                         result_dir="crack_results",
+                                                         k=2.0)
+    experiment.classify_with_fbeta([val_loader, test_loader],
+                                                         result_dir="crack_results",
+                                                         beta=1.0)
 
 # ─────────────────────────────────────────────────────────
 if __name__ == "__main__":

@@ -112,34 +112,6 @@ class VAEXperiment(pl.LightningModule):
         except Warning:
             pass
 
-    # def sample_images_next_to_origs(self):
-    #     # Get sample batch
-    #     test_input, test_label = next(iter(self.trainer.datamodule.test_dataloader()))
-    #     test_input = test_input.to(self.curr_device)
-    #     test_label = test_label.to(self.curr_device)
-    #
-    #     # Generate reconstructions
-    #     recons = self.model.generate(test_input, labels=test_label)
-    #
-    #     # Concatenate original and reconstruction along the batch dimension
-    #     # i.e., [x0, x1, ..., xn, x0', x1', ..., xn']
-    #     comparison = torch.cat([test_input, recons])
-    #
-    #     # Ensure save dir exists
-    #     recon_dir = os.path.join(self.logger.log_dir, "Reconstructions")
-    #     os.makedirs(recon_dir, exist_ok=True)
-    #
-    #     # Save image grid with 2 rows: top = originals, bottom = reconstructions
-    #     vutils.save_image(
-    #         comparison.data,
-    #         os.path.join(
-    #             self.logger.log_dir,
-    #             "Reconstructions",
-    #             f"recons_comp_{self.logger.name}_Epoch_{self.current_epoch}.png"
-    #         ),
-    #         nrow=test_input.size(0),  # so originals and recons appear in pairs
-    #         normalize=True
-    #     )
 
     def sample_images_next_to_origs(self, num_pairs_per_row=5):
 
@@ -181,7 +153,7 @@ class VAEXperiment(pl.LightningModule):
         latents = []
         labels = []
 
-        device = next(self.model.parameters()).device  # safe way to get model's device
+        device = next(self.model.parameters()).device
 
         with torch.no_grad():
             for batch in dataloader:
@@ -221,10 +193,48 @@ class VAEXperiment(pl.LightningModule):
         plt.show()
 
 
-    def classify_cracked_images(self,
-                                dataloaders,  # [val_loader, test_loader]
-                                result_dir: str = "./logs/",
-                                k: float = 3.0):
+    def get_error_vecs_meaned_per_pixel(self, dataloader):
+        model = self.model.eval()
+        device = next(model.parameters()).device
+
+        errors = []
+        with torch.no_grad():
+            for x, _ in tqdm(dataloader, desc="Reconstructing images"):
+                x = x.to(device)
+                recon = model.generate(x)
+                err = F.mse_loss(recon, x, reduction="none")
+                err = err.flatten(1).mean(dim=1)
+                errors.extend(err.cpu().numpy())
+
+        return np.array(errors)
+
+    def get_error_vecs_per_channel(self, dataloader):
+        model = self.model.eval()
+        device = next(model.parameters()).device
+
+        error_vecs = []
+        labels = []
+
+        with torch.no_grad():
+            for x, lbl in tqdm(dataloader, desc="Reconstructing images"):
+                x = x.to(device)
+                recon = model.generate(x)
+                err = F.mse_loss(recon, x, reduction="none")  # [B, C, H, W]
+                err = err.view(err.size(0), err.size(1), -1).mean(dim=2)  # [B, C] → mean per channel
+
+                error_vecs.append(err.cpu().numpy())
+                labels.append(lbl.cpu().numpy())
+
+        error_vecs = np.concatenate(error_vecs, axis=0)
+        labels = np.concatenate(labels, axis=0)
+
+        return error_vecs, labels
+
+
+    def classify_cracked_images_with_k_sigma_rule(self,
+                                                  dataloaders,  # [val_loader, test_loader]
+                                                  result_dir: str = "./logs/",
+                                                  k: float = 3.0):
         """
         1. Compute threshold = μ + k·σ of reconstruction error on the *validation* set
         2. Classify each image in the *test* set with that threshold
@@ -237,17 +247,8 @@ class VAEXperiment(pl.LightningModule):
         device = next(model.parameters()).device
         os.makedirs(result_dir, exist_ok=True)
 
-        # ───── 1) Threshold from validation set ─────
-        val_errors = []
-        with torch.no_grad():
-            for x, _ in tqdm(val_loader, desc="Validation"):
-                x = x.to(device)
-                recon = model.generate(x)
-                err = F.mse_loss(recon, x, reduction="none")
-                err = err.flatten(1).mean(dim=1)
-                val_errors.extend(err.cpu().numpy())
+        val_errors = self.get_error_vecs_meaned_per_pixel(val_loader)
 
-        val_errors = np.array(val_errors)
         mu, sigma = val_errors.mean(), val_errors.std()
         threshold = mu + k * sigma
         print(f"\nThreshold set to: {threshold:.6f}  (μ={mu:.6f}, σ={sigma:.6f}, k={k})")
@@ -291,6 +292,7 @@ class VAEXperiment(pl.LightningModule):
         bal_acc = balanced_accuracy_score(y_true, y_pred)
         tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
 
+        print("\n--- k-sigma rule Classification Report ---")
         print(f"\nTotal images         : {total}")
         print(f"Correct              : {correct}  ({acc:.2f} %)")
         print(f"Incorrect            : {total - correct}  ({100 - acc:.2f} %)")
@@ -350,6 +352,153 @@ class VAEXperiment(pl.LightningModule):
 
         return cracked, uncracked, threshold
 
+    def classify_with_fbeta(self, dataloaders, result_dir="./logs/", beta=1.0):
+        val_loader, test_loader = dataloaders
+        model = self.model.eval()
+        device = next(model.parameters()).device
+        os.makedirs(result_dir, exist_ok=True)
+
+        # ───── Step 1: MLE fit from val set ─────
+        val_error_vecs, _ = self.get_error_vecs_per_channel(val_loader)
+
+        print("error vec shape in classify_with_fbeta: " + str(val_error_vecs.shape))
+
+        mu, sigma = self.calculate_mle_mu_sigma(val_error_vecs)
+
+        # ───── Step 2: Get test errors ─────
+        # test_error_vecs = []
+        # y_true = []
+        # x_all = []
+        #
+        # with torch.no_grad():
+        #     for x, lbl in tqdm(test_loader, desc="Testing"):
+        #         x = x.to(device)
+        #         recon = model.generate(x)
+        #         err = F.mse_loss(recon, x, reduction="none")
+        #         err = err.flatten(1)  # shape: [B, D]
+        #
+        #         test_error_vecs.extend(err.cpu().numpy())
+        #         y_true.extend(lbl.cpu().numpy())
+        #         x_all.extend(x.cpu())  # for saving images later
+        #
+        # test_error_vecs = np.array(test_error_vecs)
+
+        x_all = []
+        with torch.no_grad():
+            for x, lbl in tqdm(test_loader, desc="Scuffed workaround to save images"):
+                x_all.extend(x.cpu())
+
+        test_error_vecs, y_true = self.get_error_vecs_per_channel(test_loader)
+
+        # ───── Step 3: Compute anomaly scores ─────
+        scores = self.compute_anomaly_score(test_error_vecs, mu, sigma)
+
+        # ───── Step 4: Find threshold (optional) ─────
+        threshold, best_fbeta = self.find_optimal_threshold(scores, y_true, beta=beta)
+        print(f"Best threshold from PR curve (F{beta}): {threshold:.4f}")
+
+        # ───── Step 5: Classification and metrics ─────
+        y_pred = (scores > threshold).astype(int)
+
+        cracked, uncracked = [], []
+        for i, (img, score, pred, true_lbl) in enumerate(zip(x_all, scores, y_pred, y_true)):
+            tag = "crack" if pred == 1 else "normal"
+            os.makedirs(os.path.join(result_dir, tag), exist_ok=True)
+            save_image(img, os.path.join(result_dir, tag, f"{i:05d}.png"))
+
+            (cracked if pred == 1 else uncracked).append((i, score))
+
+        # ───── Metrics ─────
+        correct = (y_pred == y_true).sum()
+        acc = 100 * (y_pred == y_true).sum() / len(y_true)
+        precision = precision_score(y_true, y_pred, zero_division=0)
+        recall = recall_score(y_true, y_pred, zero_division=0)
+        f1 = f1_score(y_true, y_pred, zero_division=0)
+        bal_acc = balanced_accuracy_score(y_true, y_pred)
+        tn, fp, fn, tp = confusion_matrix(y_true, y_pred).ravel()
+
+        print("\n--- F-beta-MLE Classification Report ---")
+        print(f"\nTotal images         : {str(len(y_true))}")
+        print(f"Correct              : {correct}  ({acc:.2f} %)")
+        print(f"Incorrect            : {len(y_true) - correct}  ({100 - acc:.2f} %)")
+        print(f"Predicted 'crack'    : {len(cracked)}")
+        print(f"Predicted 'normal'   : {len(uncracked)}")
+        print("\n--- Classification Report ---")
+        print(f"Precision         : {precision:.4f}")
+        print(f"Recall            : {recall:.4f}")
+        print(f"F1 Score          : {f1:.4f}")
+        print(f"Balanced Accuracy : {bal_acc:.4f}")
+        print(f"Confusion Matrix  : TP={tp}, FP={fp}, TN={tn}, FN={fn}")
+
+        return cracked, uncracked, threshold
+
+
+    def calculate_mle_mu_sigma(self, error_vecs):
+        mu = np.mean(error_vecs, axis=0)
+        sigma = None
+
+        print("error vec shape in calculate_mle_mu_sigma: " + str(error_vecs.shape))
+
+        if error_vecs.shape[1] == 1:
+            sigma = np.var(error_vecs)  # variance for 1D vectors
+        else:
+            sigma = np.cov(error_vecs, rowvar=False)  # Covariance matrix for mD vectors
+
+        print("mu: " + str(mu))
+        print("sigma: " + str(sigma))
+
+        return mu, sigma
+
+    def compute_anomaly_score(self, error_vecs, mu, sigma):
+        print("error_vecs shape in compute_anomaly_score: " + str(error_vecs.shape))
+        scores_of_seq = None
+
+        if error_vecs.shape[1] == 1:
+            # scores_of_window.append(np.square(data_point - mu) / sigma) #z_score for univariate data -->doesnt work
+            # scores_of_seq = np.sqrt(np.square(np.subtract(error_vecs, mu)))
+            # Z-score for univariate data
+            scores_of_seq = np.abs(error_vecs - mu) / sigma
+        else:
+            # Mahalanobis distance for multivariate data
+            inv_cov_matr = np.linalg.inv(sigma)
+            diff = error_vecs - mu
+            scores_of_seq = np.einsum('ij,jk,ik->i', diff, inv_cov_matr, diff)
+
+        return scores_of_seq
+
+    def find_optimal_threshold(self, anomaly_scores, true_labels, beta):
+        anomaly_scores = anomaly_scores.flatten()
+        true_labels = np.squeeze(true_labels).flatten()
+
+        print("anomaly_scores shape: " + str(anomaly_scores.shape))
+        print("true_labels shape: " + str(true_labels.shape))
+
+        precision, recall, thresholds = precision_recall_curve(y_true=true_labels, y_score=anomaly_scores)
+        fbeta_scores = (1 + beta ** 2) * (precision * recall) / ((beta ** 2) * precision + recall)
+        fbeta_scores = np.nan_to_num(fbeta_scores, nan=-np.inf, posinf=-np.inf)
+
+        print("fbeta scores: \n" + str(fbeta_scores))
+        print("best fbeta: " + str(np.max(fbeta_scores)))
+        best_index = np.argmax(fbeta_scores)
+        if best_index >= len(thresholds):
+            best_index = len(thresholds) - 1
+
+        print("Thresholds: " + str(thresholds))
+        print("Best threshold: " + str(thresholds[best_index]))
+        print(str(thresholds))
+        best_threshold = thresholds[best_index]
+        best_fbeta = fbeta_scores[best_index]
+
+        # plt.figure()
+        # plt.plot(thresholds, precision[:-1], 'b-', label='Precision')
+        # plt.plot(thresholds, recall[:-1], 'g-', label='Recall')
+        # plt.xlabel('Threshold')
+        # plt.ylabel('Precision/Recall')
+        # plt.legend(loc='best')
+        # plt.title('Precision-Recall Curve')
+        # plt.show()
+
+        return best_threshold, best_fbeta
 
     def configure_optimizers(self):
 
