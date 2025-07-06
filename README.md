@@ -9,3 +9,4 @@ $ pip install -r requirements.txt
 ```
 $ cd PyTorch-VAE
 $ python load_and_run_model.py -c configs/vae.yaml --ckpt .\logs\VanillaVAE\<insert version to load>\checkpoints\<insert checkpoint file to load>
+$ e.g. "python load_and_run_model.py -c configs/vae.yaml --ckpt .\logs\VanillaVAE\version_19\checkpoints\epoch=141-step=28968.ckpt"
